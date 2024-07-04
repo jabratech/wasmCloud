@@ -122,10 +122,9 @@ impl NatsMessagingProvider {
             opts = opts.custom_inbox_prefix(prefix);
         }
 
-        let client = opts
-            .name("NATS Messaging Provider") // allow this to show up uniquely in a NATS connection list
-            .connect(url)
-            .await?;
+        let opts = opts.name("NATS Messaging Provider");
+
+        let client = async_nats::connect_with_options(url, opts).await?;
 
         // Connections
         let mut sub_handles = Vec::new();
