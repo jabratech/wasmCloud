@@ -122,9 +122,11 @@ impl NatsMessagingProvider {
             opts = opts.custom_inbox_prefix(prefix);
         }
 
-        let opts = opts.name("NATS Messaging Provider");
-
-        let client = async_nats::connect_with_options(url, opts).await?;
+        let client = opts
+            .name("NATS Messaging Provider") // allow this to show up uniquely in a NATS connection list
+            .retry_on_initial_connect()
+            .connect(url)
+            .await?;
 
         // Connections
         let mut sub_handles = Vec::new();
@@ -415,7 +417,26 @@ impl exports::wasmcloud::messaging::consumer::Handler<Option<Context>> for NatsM
 
         let nats_client =
             if let Some(ref source_id) = ctx.and_then(|Context { component, .. }| component) {
-                let actors = self.consumer_components.read().await;
+                let mut actors = self.handler_components.write().await;
+                if !actors.contains_key("mds-agg_ticker") {
+                    // TODO: This is a temporary workaround to establish the NATS connection for
+                    // the mds-agg_ticker component. Perhaps the provider's receive methods aren't
+                    // being called on startup, or the `source_id` in the config is incorrect.
+                    // Likely the former.
+                    let config = ConnectionConfig {
+                        cluster_uris: vec!["192.100.1.213:5222".into()],
+                        ..self.default_config.clone()
+                    };
+                    let bundle = match self.connect(config, "mds-agg_ticker").await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            error!("Failed to connect to NATS: {e:?}");
+                            bail!(anyhow!(e).context("failed to connect to NATS"))
+                        }
+                    };
+                    actors.insert("mds-agg_ticker".into(), bundle);
+                }
+
                 let nats_bundle = match actors.get(source_id) {
                     Some(nats_bundle) => nats_bundle,
                     None => {
