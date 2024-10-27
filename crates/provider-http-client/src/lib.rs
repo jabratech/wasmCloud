@@ -150,10 +150,22 @@ impl ServeOutgoingHandlerHttp<Option<Context>> for HttpClientProvider {
         // TODO: Use opts
         let _ = options;
         // Ensure we have a User-Agent header set.
-        request
-            .headers_mut()
+        let headers = request.headers_mut();
+        headers
             .entry(http::header::USER_AGENT)
             .or_insert(http::header::HeaderValue::from_static(DEFAULT_USER_AGENT));
+
+        // Check if the X-HOST header is present and set the HOST header accordingly
+        // This is a temporary workaround to set the HOST header from a component
+        // Once we have a proper mechanism to set the HOST header directly, this code can be removed
+        match headers.get("X-HOST") {
+            Some(x_host) => {
+                headers.insert(http::header::HOST, x_host.clone());
+                headers.remove("X-HOST");
+            }
+            None => {}
+        }
+
         Ok(async {
             debug!(uri = ?request.uri(), "sending HTTP request");
             let res = self
